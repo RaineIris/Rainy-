@@ -1,0 +1,2282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rainy 阅读器 (v20.6)</title>
+    <style id="font-import-styles"></style>
+    <style>
+        :root {
+            --theme-color: #d94689; /* 主题粉色 */
+            --theme-light: #fce3ec; /* 浅粉 */
+            --theme-bg: linear-gradient(135deg, #fce3ec 0%, #e8f0fe 100%);
+            --text-dark: #333;
+            --text-light: #666;
+            --danger-color: #e53e3e; /* 删除按钮红色 */
+        }
+
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", 'Noto Sans SC', Arial, sans-serif;
+            overflow: hidden;
+            background-image: var(--theme-bg);
+        }
+
+        /* * ======================================
+         * V15.0 标题画面 (默认显示)
+         * ======================================
+        */
+        #title-screen {
+            width: 100%; height: 100%;
+            display: flex; /* 默认显示 */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(15px);
+            background-color: rgba(255, 255, 255, 0.5);
+            /* V19.0 确保在游戏容器之上 */
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 28; /* V20.0 调整: 位于 28 */
+        }
+        #title-screen-logo {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            color: var(--theme-color);
+            margin-bottom: 40px;
+        }
+        #title-screen-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 300px;
+            max-width: calc(100% - 40px);
+        }
+        #title-screen-menu button {
+            background-color: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--theme-color);
+            color: var(--theme-color);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #title-screen-menu button:hover {
+            background-color: var(--theme-color);
+            color: white;
+            transform: scale(1.02);
+        }
+        /* V15.0 禁用继续按钮 */
+        #title-screen-menu button:disabled {
+            background-color: #ddd;
+            border-color: #ccc;
+            color: #999;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+
+        /* 游戏主容器 (V15.0 默认隐藏) */
+        #game-container {
+            width: 100%; height: 100%; color: var(--text-dark);
+            display: none; /* V15.0 默认隐藏 */
+            flex-direction: column; justify-content: flex-end;
+            position: relative;
+        }
+
+        /* 点击区域 */
+        #click-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; cursor: pointer; }
+
+        /*
+         * ======================================
+         * 菜单按钮
+         * ======================================
+        */
+        #menu-btn {
+            position: absolute; top: 20px; right: 20px;
+            z-index: 31; /* V20.0 修复: 永远在最上层 */
+            cursor: pointer; padding: 10px;
+            width: 44px; height: 44px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            display: flex; flex-direction: column; justify-content: center;
+            align-items: center; gap: 5px;
+            backdrop-filter: blur(5px);
+            border: 1px solid #ccc;
+        }
+        #menu-btn .menu-bar { width: 24px; height: 3px; background-color: var(--text-dark); border-radius: 2px; }
+
+        /* 通用弹窗背景 */
+        .modal-backdrop {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.0);
+            z-index: 30; /* V20.0: 位于 30 */
+            display: none;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(3px);
+            transition: background-color 0.3s ease;
+        }
+        .modal-backdrop.show {
+            display: flex;
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+        
+        /* 弹窗通用样式 */
+        .modal-content {
+            background-color: #f5f7fa; border-radius: 10px; padding: 0;
+            width: calc(100% - 40px); max-width: 400px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .modal-header {
+            text-align: center; padding: 15px; font-size: 1.5em;
+            border-bottom: 1px solid #eee; position: relative;
+            background-color: white; color: var(--text-dark);
+        }
+        
+        /* V14.3 修复：美化关闭按钮 */
+        .modal-close-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #f0f0f0;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .modal-close-btn:hover {
+            background-color: #e0e0e0;
+            transform: rotate(90deg);
+        }
+        .modal-close-btn::before,
+        .modal-close-btn::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 2px;
+            background-color: #888;
+        }
+        .modal-close-btn::before {
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+        .modal-close-btn::after {
+            transform: translate(-50%, -50%) rotate(-45deg);
+        }
+
+        .modal-body { flex: 1; overflow-y: auto; padding: 10px; max-height: 70vh; }
+        
+        /* 弹窗内的按钮 */
+        .modal-body .modal-btn {
+            background-color: var(--theme-color); color: white; border: none;
+            padding: 12px; border-radius: 8px; cursor: pointer;
+            font-size: 1em; font-weight: bold; width: 100%;
+            margin-top: 10px;
+            transition: background-color 0.2s ease;
+        }
+        .modal-body .modal-btn.secondary {
+            background-color: #e0e0e0;
+            color: var(--text-dark);
+            border: 1px solid #ccc;
+        }
+        .modal-body .modal-btn:hover {
+            opacity: 0.8;
+        }
+        .modal-body .modal-btn.secondary:hover {
+            background-color: #d0d0d0;
+            opacity: 1;
+        }
+        .modal-body .modal-btn.danger {
+            background-color: var(--danger-color); color: white;
+        }
+        
+
+        /* V11 升级：主菜单 (滑出式面板) */
+        #menu-modal {
+            justify-content: flex-end; /* 弹窗内容靠右 */
+            background-color: transparent;
+            overflow: hidden;
+        }
+        #menu-panel { /* 替换 .modal-content */
+            background-color: #f5f7fa;
+            width: 300px; max-width: 80%; 
+            height: 100%;
+            display: flex; flex-direction: column;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            flex-shrink: 0;
+        }
+        #menu-modal.show #menu-panel {
+            transform: translateX(0); /* 滑入 */
+        }
+        
+        #menu-modal .modal-section { padding: 10px; }
+        #menu-modal h3 {
+            margin: 10px 0 10px 10px; color: var(--text-light); font-size: 1em;
+            border-bottom: 1px solid #eee; padding-bottom: 5px;
+        }
+        
+        /* 故事管理 */
+        #story-list { display: flex; flex-direction: column; gap: 10px; }
+        .story-item {
+            background-color: white; border: 1px solid #ddd; border-radius: 8px;
+            padding: 15px; cursor: pointer; position: relative;
+        }
+        .story-item.active { border-left: 5px solid var(--theme-color); }
+        .story-name {
+            font-weight: bold; white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; padding-right: 110px; /* V20.4 为编辑和删除按钮留出空间 */
+        }
+        .story-delete-btn {
+            position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+            background-color: #fee; color: var(--danger-color); border: 1px solid var(--danger-color);
+            border-radius: 5px; padding: 5px 8px; font-size: 0.9em; font-weight: bold; cursor: pointer;
+        }
+        .story-delete-btn:hover { background-color: var(--danger-color); color: white; }
+        
+        /* V20.4 编辑按钮 */
+        .story-edit-btn {
+            position: absolute; right: 55px; top: 50%; transform: translateY(-50%);
+            background-color: #eef; color: #44a; border: 1px solid #44a;
+            border-radius: 5px; padding: 5px 8px; font-size: 0.9em; font-weight: bold; cursor: pointer;
+        }
+        .story-edit-btn:hover { background-color: #44a; color: white; }
+        
+        /* 章节列表 */
+        .chapter-list {
+            max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
+            margin-top: 0;
+        }
+        .story-item.expanded .chapter-list {
+            max-height: 200px; /* 展开 */
+            overflow-y: auto; margin-top: 10px;
+        }
+        .chapter-item {
+            padding: 10px; border-top: 1px solid #eee; font-size: 0.9em;
+            color: var(--text-light); background-color: #fcfcfc;
+        }
+        .chapter-item:hover { background-color: #f0f0f0; }
+        .chapter-item.section { font-weight: bold; color: var(--text-dark); }
+        .chapter-item.scene { padding-left: 20px; }
+        
+        #import-story-btn {
+            width: calc(100% - 20px); margin: 10px; background-color: var(--theme-color);
+            color: white; border: none; padding: 15px; border-radius: 8px;
+            cursor: pointer; font-size: 1em; font-weight: bold;
+        }
+
+        /* 游戏控制 */
+        #game-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        #game-controls button {
+            background-color: white; border: 1px solid #ccc; color: var(--text-dark);
+            padding: 15px 10px; border-radius: 8px; cursor: pointer; font-size: 1em;
+            transition: background-color 0.2s;
+        }
+        #game-controls button:hover { background-color: #f0f0f0; }
+        #game-controls button.active {
+            background-color: #ff85b3; border-color: #ff85b3; color: white;
+        }
+
+        /* 5. 场景标题 (左上角) */
+        #scene-title {
+            position: absolute; top: 20px; left: 20px;
+            background-color: rgba(255, 255, 255, 0.7);
+            color: var(--text-light); padding: 5px 12px; border-radius: 15px;
+            font-size: 16px; z-index: 5; transition: opacity 0.3s ease;
+            opacity: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            backdrop-filter: blur(5px);
+        }
+        #scene-title.show { opacity: 1; }
+
+        /* 6. 对话框 */
+        #dialogue-box {
+            width: calc(100% - 40px); margin: 20px; padding: 20px;
+            background-color: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 10px; min-height: 150px; position: relative;
+            z-index: 5; transition: opacity 0.3s ease;
+            opacity: 0; backdrop-filter: blur(10px);
+            
+            /* V20.6 设为 Flex 布局 */
+            display: flex;
+            flex-direction: column;
+            /* 默认 (对话) 顶部对齐 */
+            justify-content: flex-start;
+        }
+        #dialogue-box.show { opacity: 1; }
+
+        /* 7. 角色名称 */
+        #character-name {
+            color: var(--theme-color); font-size: 1.2em; font-weight: bold;
+            margin-bottom: 15px; min-height: 1.2em;
+            /* V20.5 追加：トランジション */
+            transition: margin-bottom 0.2s ease, min-height 0.2s ease, opacity 0.2s ease;
+            opacity: 1;
+        }
+        
+        /* V20.5 追加：旁白模式 */
+        #dialogue-box.name-hidden #character-name {
+            min-height: 0;
+            margin-bottom: 0;
+            opacity: 0; /* 隐藏 */
+        }
+        /* V20.6 旁白模式下垂直居中 */
+        #dialogue-box.name-hidden {
+            justify-content: center;
+        }
+        
+        /* 8. 对话文本 */
+        #dialogue-text {
+            font-size: 1.1em; line-height: 1.6; white-space: pre-wrap; min-height: 50px;
+        }
+        #dialogue-text::after { content: '|'; opacity: 1; animation: blink 0.7s infinite; }
+        #dialogue-text.completed::after { content: ''; animation: none; opacity: 0; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /*
+         * ======================================
+         * V14 升级：章节标题动画 (艺术字)
+         * ======================================
+        */
+        @keyframes title-char-fly-in {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        #section-title {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(255, 255, 255, 0.95); color: var(--text-dark);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; z-index: 20; opacity: 0; visibility: hidden;
+            cursor: pointer;
+            transition: opacity 0.3s ease, visibility 0s 0.3s;
+        }
+        #section-title.show { 
+            opacity: 1; 
+            visibility: visible;
+            transition: opacity 0.3s ease, visibility 0s 0s;
+        }
+        #section-title h1 { 
+            font-size: 2.5em; margin: 0;
+            /* 为动画准备 */
+            perspective: 300px;
+        }
+        /* 艺术字动画的span */
+        #section-title h1 span {
+            display: inline-block;
+            opacity: 0;
+            animation: title-char-fly-in 0.5s ease-out forwards;
+        }
+        #section-title h2 { font-size: 1.5em; font-weight: normal; color: var(--text-light); }
+
+        /* 10. 历史记录 (Log) 弹窗 */
+        #log-content { flex: 1; overflow-y: auto; padding: 20px; }
+        .log-entry { margin-bottom: 15px; }
+        .log-character { color: var(--theme-color); font-weight: bold; margin-bottom: 5px; }
+        .log-text { font-size: 1.1em; color: var(--text-dark); padding-left: 10px; border-left: 3px solid var(--theme-light); }
+
+        /* 11. 场景切换动画 (v3) */
+        #scene-transition {
+            position: absolute; top: 50%; left: 0; width: 100%;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 15; transform: translateY(-50%);
+            pointer-events: none; opacity: 0; cursor: pointer;
+            transition: opacity 0.5s ease;
+        }
+        #scene-transition-text {
+            background-color: rgba(217, 70, 137, 0.85); color: white;
+            padding: 12px 30px; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 1.2em; transform: translateX(-100vw);
+            transition: transform 0.5s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.5s ease;
+            position: relative; overflow: hidden;
+        }
+        #scene-transition-text::before,
+        #scene-transition-text::after {
+            content: ''; position: absolute; width: 50px; height: 200%;
+            background-color: rgba(255, 255, 255, 0.15);
+            transform: rotate(-30deg);
+        }
+        #scene-transition-text::before { top: -50%; left: -20px; }
+        #scene-transition-text::after { top: -50%; left: 40px; }
+        #scene-transition.show { opacity: 1; pointer-events: auto; }
+        
+        #scene-transition.slide-out {
+            opacity: 0;
+        }
+        #scene-transition.slide-out #scene-transition-text {
+            transform: translateX(100vw);
+        }
+
+        /* 12. 存读档弹窗 */
+        .save-slot { background-color: white; border: 1px solid #ddd; border-radius: 10px; margin: 10px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; transition: background-color 0.2s ease; }
+        .save-slot:hover { background-color: #f9f9f9; }
+        .save-slot.empty { text-align: center; color: var(--text-light); padding: 30px 15px; font-style: italic; }
+        .slot-header { display: flex; justify-content: space-between; align-items: center; }
+        
+        .slot-header-left { 
+            font-weight: bold; 
+            font-size: 1.1em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 10px;
+        }
+        .slot-header-right { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        .slot-time { 
+            font-size: 0.9em; 
+            font-weight: normal; 
+            color: var(--text-light); 
+        }
+        .slot-rename-btn {
+            font-size: 1.1em;
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+        .slot-rename-btn:hover {
+            background-color: #eee;
+        }
+        
+        .slot-chapter { margin-top: 8px; color: var(--theme-color); font-weight: bold; }
+        .slot-line { margin-top: 5px; color: var(--text-dark); font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* 13. 速度选择弹窗 */
+        #speed-modal .modal-body { padding: 20px; }
+        #speed-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+        #speed-options button {
+            background-color: #f0f0f0; border: 1px solid #ddd; color: var(--text-dark);
+            padding: 10px; border-radius: 5px; cursor: pointer; font-size: 1em;
+        }
+        #speed-options button:hover { background-color: #e0e0e0; }
+        #speed-cancel-btn {
+            width: 100%; background-color: #aaa; color: white; border: none;
+            padding: 10px; border-radius: 5px; cursor: pointer; font-size: 1em;
+        }
+        
+        /* V16.0 设置弹窗 (字体重构) */
+        #settings-modal .modal-body { padding: 20px; }
+        #settings-modal h4 { margin-top: 0; margin-bottom: 10px; }
+        #settings-modal p { font-size: 0.9em; color: var(--text-light); margin-top: 0; }
+        
+        /* V16.0 字体管理 */
+        .font-manager-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        #font-select {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background: white;
+        }
+        #font-delete-btn {
+            padding: 0 12px;
+            border: 1px solid var(--danger-color);
+            background: #fee;
+            color: var(--danger-color);
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .font-add-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 15px;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .font-add-group input {
+            width: calc(100% - 20px); /* 100% - padding */
+            border: 1px solid #ccc;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        /* V16.0 字体 CSS 文本框 */
+        .font-add-group textarea {
+            width: calc(100% - 20px);
+            border: 1px solid #ccc;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        
+        #convert-file-input {
+            width: calc(100% - 22px); /* 100% - padding/border */
+            border: 1px solid #ccc;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        
+        /* V19.0 AI 转换帮助 */
+        #ai-convert-help {
+            font-size: 0.9em;
+            background: #eee;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #ai-convert-help p {
+            margin-top: 0;
+            color: var(--text-light);
+        }
+        #ai-convert-help details {
+            background: #fff;
+            border-radius: 5px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            margin-top: 10px;
+        }
+        #ai-convert-help summary {
+            cursor: pointer;
+            font-weight: bold;
+            color: var(--text-dark);
+        }
+        #ai-convert-help pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+        }
+        /* V20.0 修复: 复制按钮样式 */
+        #copy-prompt-btn {
+            background-color: var(--theme-color);
+            color: white;
+            width: auto;
+            padding: 8px 12px;
+            font-size: 0.9em;
+        }
+        #copy-prompt-btn:hover {
+            opacity: 0.8;
+        }
+        
+        
+        /* V14.8 AI 转换 Loading */
+        #loading-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 9998;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 1.2em;
+        }
+        
+        /* V14.8 转换结果弹窗 */
+        #convert-result-modal .modal-body {
+            text-align: center;
+            padding: 20px;
+        }
+        #convert-result-modal h3 {
+            margin-top: 0;
+        }
+        /* V20.3 CSS 修复 */
+        #convert-result-controls {
+            display: grid; /* V20.3 改为 grid */
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        /* V20.3 编辑按钮 */
+        #convert-edit-btn {
+            grid-column: 1 / -1; /* 占满整行 */
+            margin-top: 0;
+        }
+        
+        /* V20.3 转换编辑弹窗 */
+        #edit-story-modal .modal-content {
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #edit-story-textarea {
+            width: 100%;
+            height: 60vh;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        #edit-story-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        /* V20.4 数据库故事编辑弹窗 */
+        #edit-db-story-modal .modal-content {
+            width: calc(100% - 20px);
+            max-width: 600px;
+        }
+        #edit-db-story-textarea {
+            width: 100%;
+            height: 60vh;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        #edit-db-story-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        /* V19.0 故事结束画面 */
+        #story-end-screen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 26; /* V20.0: 低于菜单 (31) 高于游戏 (25) */
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+        }
+        #story-end-btn {
+            background-color: rgba(255, 255, 255, 0.85);
+            border: 1px solid var(--theme-color);
+            color: var(--theme-color);
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        #story-end-btn:hover {
+            background-color: var(--theme-color);
+            color: white;
+        }
+
+    </style>
+</head>
+<body>
+    
+    <div id="title-screen">
+        <div id="title-screen-logo">Rainy 阅读器</div>
+        <div id="title-screen-menu">
+            <button id="title-continue-btn" disabled>继续游戏</button>
+            <button id="title-start-btn">重新开始</button>
+            <button id="title-load-btn">读取存档</button>
+            <button id="title-story-list-btn">切换故事</button> <button id="title-settings-btn">游戏设置</button>
+        </div>
+    </div>
+
+    <div id="game-container">
+        
+        <div id="menu-btn">
+            <div class="menu-bar"></div>
+            <div class="menu-bar"></div>
+            <div class="menu-bar"></div>
+        </div>
+
+        <div id="scene-title"></div>
+
+        <div id="dialogue-box">
+            <div id="character-name"></div>
+            <div id="dialogue-text"></div> 
+        </div>
+
+        <div id="click-area"></div>
+        
+        <div id="scene-transition">
+            <span id="scene-transition-text"></span>
+        </div>
+    </div>
+
+    <div id="section-title">
+        <h1 id="section-title-main"></h1>
+        <h2 id="section-title-sub"></h2>
+    </div>
+    
+    <div id="story-end-screen">
+        <button id="story-end-btn">返回标题</button>
+    </div>
+
+    <div class="modal-backdrop" id="menu-modal">
+        <div id="menu-panel">
+            <div class="modal-header">
+                菜单
+                <span class="modal-close-btn" data-modal-id="menu-modal"></span>
+            </div>
+            <div class="modal-body" style="padding-top: 0;"> <div id="story-manager">
+                    <h3>故事列表</h3>
+                    <div id="story-list">
+                        </div>
+                    <button id="import-story-btn">导入新故事 (.txt)</button>
+                    <input type="file" id="import-file-input" accept=".txt" style="display: none;">
+                </div>
+                
+                <div id="game-controls-section">
+                    <h3>游戏控制</h3>
+                    <div id="game-controls">
+                        <button id="save-btn">存档</button>
+                        <button id="load-btn">读档</button>
+                        <button id="log-btn">历史</button>
+                        <button id="title-btn">返回标题</button>
+                        <button id="auto-btn">Auto</button>
+                        <button id="skip-btn">快进</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="log-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                历史记录
+                <span class="modal-close-btn" data-modal-id="log-modal"></span>
+            </div>
+            <div class="modal-body" id="log-content">
+                </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="save-load-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="save-load-title">数据管理</span>
+                <span class="modal-close-btn" data-modal-id="save-load-modal"></span>
+            </div>
+            <div class="modal-body" id="save-load-content">
+                </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="speed-modal">
+        <div class="modal-content" style="max-width: 300px;">
+            <div class="modal-header">
+                <h3 id="speed-modal-title" style="margin: 0; font-size: 1.2em;">设置速度</h3>
+            </div>
+            <div class="modal-body" id="speed-options-body">
+                <div id="speed-options">
+                    </div>
+                <button id="speed-cancel-btn">取消</button>
+            </div>
+        </div>
+    </div>
+    
+    
+    <div class="modal-backdrop" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                游戏设置
+                <span class="modal-close-btn" data-modal-id="settings-modal"></span>
+            </div>
+            <div class="modal-body">
+                <h4>字体设置</h4>
+                <p>管理和切换阅读器字体。</p>
+                <div class="font-manager-group">
+                    <select id="font-select">
+                        <option value="DEFAULT_SYSTEM_FONT">默认系统字体</option>
+                    </select>
+                    <button id="font-delete-btn">删除</button>
+                </div>
+                
+                <div class="font-add-group">
+                    <input type="text" id="font-name-input" placeholder="字体昵称 (e.g., 快乐字体)">
+                    <textarea id="font-css-input" rows="5" placeholder="在此粘贴完整的 CSS 代码，例如：&#10;@import url(...);&#10;body { font-family: '...'; }"></textarea>
+                    <button id="font-save-btn" class="modal-btn secondary">保存并应用字体</button>
+                </div>
+                
+                <button id="font-default-btn" class="modal-btn secondary">恢复默认字体</button>
+                
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+                
+                <h4>AI 剧情格式转换</h4>
+                <p>上传非标准格式的 .txt, .md, .rtf 文件。</p>
+                <input type="file" id="convert-file-input" accept=".txt,.md,.rtf">
+                <button id="convert-start-btn" class="modal-btn">开始转换</button>
+                
+                <div id="ai-convert-help">
+                    <p><b>提示：</b>不支持 .docx 文件。请先将 .docx 用 Word 另存为 .rtf 或 .txt，或使用其他 AI 转换。</p>
+                    <button id="copy-prompt-btn" class="modal-btn">📋 复制转换提示词</button>
+                    <details>
+                        <summary>展开/收起提示词</summary>
+                        <pre id="prompt-pre-block"></pre>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-backdrop" id="convert-result-modal">
+        <div class="modal-content" style="max-width: 300px;">
+            <div class="modal-body">
+                <h3>转换成功！</h3>
+                <p>已成功处理剧情文本，请选择操作：</p>
+                <div id="convert-result-controls">
+                    <button id="convert-download-btn" class="modal-btn secondary">下载文件</button>
+                    <button id="convert-import-btn" class="modal-btn">直接导入</button>
+                    <button id="convert-edit-btn" class="modal-btn secondary">二次编辑</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-backdrop" id="edit-story-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                编辑转换结果
+                <span class="modal-close-btn" data-modal-id="edit-story-modal"></span>
+            </div>
+            <div class="modal-body">
+                <p style="margin-top:0; font-size: 0.9em; color: var(--text-light);">请在此处手动修正格式，然后点击“保存修改”。</p>
+                <textarea id="edit-story-textarea"></textarea>
+                <div id="edit-story-controls">
+                    <button id="edit-story-cancel-btn" class="modal-btn secondary">取消</button>
+                    <button id="edit-story-save-btn" class="modal-btn">保存修改</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-backdrop" id="edit-db-story-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                编辑故事
+                <span class="modal-close-btn" data-modal-id="edit-db-story-modal"></span>
+            </div>
+            <div class="modal-body">
+                <p style="margin-top:0; font-size: 0.9em; color: var(--text-light);">修改后请保存。如果修改的是当前正在玩的故事，将返回标题画面。</p>
+                <textarea id="edit-db-story-textarea"></textarea>
+                <div id="edit-db-story-controls">
+                    <button id="edit-db-story-cancel-btn" class="modal-btn secondary">取消</button>
+                    <button id="edit-db-story-save-btn" class="modal-btn">保存修改</button>
+                </div>
+            </div>
+        </div>
+    </div>
+   
+    <div id="loading-overlay">
+        正在调用 AI 转换格式...
+    </div>
+
+
+    <script>
+        // ----------------------------------------
+        // V20.6 脚本 (修复旁白居中)
+        // ----------------------------------------
+        
+        // ----------------------------------------
+        // 0. 剧情格式定义 (不变)
+        // ----------------------------------------
+        const DEFAULT_STORY_NAME = "试阅故事";
+        const DEFAULT_STORY_TEXT = `
+# 试阅故事
+## 序章：一个安静的午后
+旁白: 这是一个简单的试阅文本，用于测试阅读器功能。
+角色A: 标题有动画了，而且Auto/Skip都修好了！
+角色B: 场景切换也不锁了，手感丝滑！
+旁白: (他们看起来对v20版本很满意。)
+## 终章：新的开始
+角色A: 那么，测试结束！
+角色B: 期待导入真正的VBS故事！
+`;
+
+        window.addEventListener('DOMContentLoaded', () => {
+
+            // ----------------------------------------
+            // 2. 获取元素
+            // ----------------------------------------
+            // V15.0 容器
+            const titleScreen = document.getElementById('title-screen');
+            const gameContainer = document.getElementById('game-container');
+            
+            // 游戏内
+            const clickArea = document.getElementById('click-area');
+            const dialogueBox = document.getElementById('dialogue-box');
+            const characterName = document.getElementById('character-name');
+            const dialogueText = document.getElementById('dialogue-text'); 
+            const sceneTitle = document.getElementById('scene-title');
+            
+            const sectionTitle = document.getElementById('section-title');
+            const sectionTitleMain = document.getElementById('section-title-main');
+            const sectionTitleSub = document.getElementById('section-title-sub');
+            
+            // V19.0 故事结束
+            const storyEndScreen = document.getElementById('story-end-screen');
+            const storyEndBtn = document.getElementById('story-end-btn');
+
+            // 菜单
+            const menuBtn = document.getElementById('menu-btn');
+            const menuModal = document.getElementById('menu-modal');
+            const menuPanel = document.getElementById('menu-panel');
+            const storyList = document.getElementById('story-list');
+            const importStoryBtn = document.getElementById('import-story-btn');
+            const importFileInput = document.getElementById('import-file-input');
+            
+            // 按钮
+            const logBtn = document.getElementById('log-btn');
+            const autoBtn = document.getElementById('auto-btn');
+            const skipBtn = document.getElementById('skip-btn');
+            const saveBtn = document.getElementById('save-btn');
+            const loadBtn = document.getElementById('load-btn');
+            const titleBtn = document.getElementById('title-btn');
+
+            // 弹窗
+            const allModals = document.querySelectorAll('.modal-backdrop');
+            const allCloseBtns = document.querySelectorAll('.modal-close-btn');
+            const logModal = document.getElementById('log-modal');
+            const logContent = document.getElementById('log-content');
+            const saveLoadModal = document.getElementById('save-load-modal');
+            const saveLoadTitle = document.getElementById('save-load-title');
+            const saveLoadContent = document.getElementById('save-load-content');
+            const speedModal = document.getElementById('speed-modal');
+            const speedModalTitle = document.getElementById('speed-modal-title');
+            const speedOptions = document.getElementById('speed-options');
+            const speedCancelBtn = document.getElementById('speed-cancel-btn');
+            
+            // 场景切换
+            const sceneTransition = document.getElementById('scene-transition');
+            const sceneTransitionText = document.getElementById('scene-transition-text');
+            
+            // V16.0 标题画面
+            const titleContinueBtn = document.getElementById('title-continue-btn');
+            const titleStartBtn = document.getElementById('title-start-btn');
+            const titleLoadBtn = document.getElementById('title-load-btn');
+            const titleStoryListBtn = document.getElementById('title-story-list-btn'); // V16.0
+            const titleSettingsBtn = document.getElementById('title-settings-btn');
+            
+            // V16.0 设置 (AI + 字体)
+            const settingsModal = document.getElementById('settings-modal');
+            const convertFileInput = document.getElementById('convert-file-input');
+            const convertStartBtn = document.getElementById('convert-start-btn');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            
+            // V20.3 AI转换弹窗
+            const convertResultModal = document.getElementById('convert-result-modal');
+            const convertDownloadBtn = document.getElementById('convert-download-btn');
+            const convertImportBtn = document.getElementById('convert-import-btn');
+            const convertEditBtn = document.getElementById('convert-edit-btn'); // V20.3
+            
+            // V20.3 AI转换编辑弹窗
+            const editStoryModal = document.getElementById('edit-story-modal');
+            const editStoryTextarea = document.getElementById('edit-story-textarea');
+            const editStorySaveBtn = document.getElementById('edit-story-save-btn');
+            const editStoryCancelBtn = document.getElementById('edit-story-cancel-btn');
+            
+            // V20.4 数据库故事编辑弹窗
+            const editDbStoryModal = document.getElementById('edit-db-story-modal');
+            const editDbStoryTextarea = document.getElementById('edit-db-story-textarea');
+            const editDbStorySaveBtn = document.getElementById('edit-db-story-save-btn');
+            const editDbStoryCancelBtn = document.getElementById('edit-db-story-cancel-btn');
+            
+            // V19.0 AI 帮助
+            const copyPromptBtn = document.getElementById('copy-prompt-btn');
+            const promptPreBlock = document.getElementById('prompt-pre-block');
+            
+            const fontImportStyles = document.getElementById('font-import-styles');
+            const fontSelect = document.getElementById('font-select');
+            const fontDeleteBtn = document.getElementById('font-delete-btn');
+            const fontNameInput = document.getElementById('font-name-input');
+            const fontCssInput = document.getElementById('font-css-input'); // V16.0
+            const fontSaveBtn = document.getElementById('font-save-btn');
+            const fontDefaultBtn = document.getElementById('font-default-btn');
+
+
+            // ----------------------------------------
+            // 3. 状态变量
+            // ----------------------------------------
+            let storyData = [];
+            let currentStoryName = DEFAULT_STORY_NAME;
+            let currentLine = 0;
+            let logHistory = [];
+            
+            // 游戏状态
+            let gameState = 'idle'; // idle, typing, section, scene, modal
+            let isAnimationLocked = false;
+            
+            // Auto
+            let autoMode = false;
+            let autoTimeout;
+            const autoSpeeds = { 1: 1500, 2: 750 };
+            const autoSpeedLabels = { 1: 'x1 (中)', 2: 'x2 (快)' };
+            let currentAutoSpeed = autoSpeeds[1];
+            
+            // Skip
+            let skipMode = false;
+            let skipTimeout;
+            const skipSpeeds = { 1: 400, 2: 200, 3: 50 };
+            const skipSpeedLabels = { 1: 'x1 (慢)', 2: 'x2 (中)', 3: 'x3 (快)' };
+            let currentSkipSpeed = skipSpeeds[1];
+            
+            // 存读档
+            const SAVE_KEY_PREFIX = 'vbsReaderSave_';
+            const STORY_DB_KEY = 'vbsReaderStoryDB';
+            const LAST_STORY_KEY = 'vbsReaderLastStory';
+            const TOTAL_SAVE_SLOTS = 5;
+            let currentSaveLoadMode = 'save';
+            let currentSpeedSetMode = 'auto';
+            
+            // V14.8 场景自动消失
+            let sceneTimeout; 
+            
+            // V15.0 字体
+            const FONT_DB_KEY = 'rainyReaderFontDB';
+            const LAST_FONT_KEY = 'rainyReaderLastFont';
+            const LAST_POS_PREFIX = 'rainyReaderLastPosition_';
+            const DEFAULT_FONT_VALUE = 'DEFAULT_SYSTEM_FONT'; // V17.0
+            
+            // V14.8 AI 转换
+            let convertedStoryText = '';
+            
+            // V20.3 更新 AI 提示
+            const AI_CONVERT_PROMPT = `你是一个严谨的剧情格式转换助手。你的任务是接收用户提供的任何格式的剧情文本，并将其严格转换为特定格式的 .txt 文件内容。
+
+**目标格式规则：**
+
+1.  **章节 (Section):**
+    * 以 \`# \` (\`#\`号 + 空格) 开头。
+    * 如果有副标题，使用 \` | \` (空格 + \`|\` + 空格) 分隔。
+    * 示例: \`# 第一章 | 破晓\`
+
+2.  **场景 (Scene):**
+    * 以 \`## \` (\`##\`号 + 空格) 开头。
+    * 示例: \`## 教室 - 白天\`
+
+3.  **对话 (Character):**
+    * 格式为 \`角色名: \` (角色名 + 英文冒号 + 空格)。
+    * 示例: \`杏: 早上好！\`
+
+4.  **旁白 (Narration):**
+    * 统一使用 \`旁白: \` (旁白 + 英文冒号 + 空格)。
+    * 示例: \`旁白: 阳光透过窗户洒了进来。\`
+
+**转换要求 (必须严格遵守)：**
+
+* **智能生成场景 (重要):** 即使原文没有明确的场景标记（如 \`[地点]\`），你也必须根据上下文（如环境描述、时间变化）**主动生成** \`## \` 格式的场景标题。例如，如果剧情从“教室”转到“走廊”，你必须在中间插入 \`## 走廊\`。
+* **引号即对话 (重要):** 任何被中文引号（\`“...”\` \`‘...’\`）或英文引号（\`"..."\` \`'...' \`）包裹的文本，**必须**被视为对话。
+* **智能填充对话人 (重要):** 如果引号内的对话没有明确的说话人，你**必须**根据上下文推断出合理的 \`角色名: \` 并添加到对话前。如果实在无法推断，才允许使用 \`旁白: \` 格式来包裹带引号的句子。
+* **转换旁白：** 将所有原文中没有角色名、且*不*在引号内的描述性段落、心理活动（如 \`(...)\`）都转换为 \`旁白: \` 格式。
+* **清理格式：** 来源可能是 .md 或 .rtf 文件，可能包含 *, #, \\, {} 等格式化字符。请在转换时忽略并清理掉这些无关符号。
+* **保持简洁：** 最终输出中不应包含任何原始格式或多余的空行。`;
+
+
+            // ----------------------------------------
+            // 4. 核心功能：推进 (V20.0 修复)
+            // ----------------------------------------
+            
+            const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            
+            // V20.0 核心函数：执行下一步
+            async function runNextStep() {
+                // 1. 检查弹窗
+                if (gameState === 'modal') return;
+
+                // 2. 优先处理打字
+                if (gameState === 'typing') {
+                    skipTyping();
+                } 
+                
+                // 3. 检查不可中断的动画锁
+                else if (isAnimationLocked) {
+                     return;
+                }
+
+                // 4. 处理其他状态
+                else if (gameState === 'scene') {
+                    clearTimeout(sceneTimeout);
+                    
+                    // 隐藏场景 (右滑消失)
+                    isAnimationLocked = true;
+                    sceneTransition.classList.add('slide-out');
+                    await wait(500); // 等待滑出
+                    sceneTransition.classList.remove('show', 'slide-out');
+                    sceneTransitionText.style.transform = 'translateX(-100vw)';
+                    isAnimationLocked = false;
+                    gameState = 'idle';
+                    
+                    // 隐藏完，马上显示下一行
+                    await showNextLine();
+                    
+                } else if (gameState === 'section') {
+                    // 章节标题是锁定的，点击无效
+                    return;
+                } else if (gameState === 'idle') {
+                    // 空闲时，显示下一行
+                    await showNextLine();
+                }
+                
+                // V20.0 修复：
+                // 仅当 showNextLine 执行完毕后，状态仍然是 idle 
+                // (即显示了对话并打完了字) 
+                // 才触发下一次 Auto/Skip。
+                // 如果是 'scene' 或 'section'，它们自己管理
+                if (gameState === 'idle') {
+                    triggerAutoOrSkip();
+                }
+            }
+
+            // V19.0 核心函数：显示内容 (V20.5 修复)
+            async function showNextLine() {
+                if (currentLine >= storyData.length) {
+                    stopAuto(); stopSkip();
+                    // V19.0 修复：故事结束
+                    storyEndScreen.style.display = 'flex';
+                    localStorage.setItem(LAST_POS_PREFIX + currentStoryName, 0); // 标记为已完成
+                    return;
+                }
+                
+                const line = storyData[currentLine];
+                currentLine++; // 立刻推进
+
+                if (line.type === 'section') {
+                    dialogueBox.classList.remove('show');
+                    sceneTitle.classList.remove('show');
+                    
+                    await animateSectionTitle(line.main, line.sub || '');
+                    
+                    gameState = 'section';
+                    isAnimationLocked = true;
+                    
+                    await wait(1800); // 锁1.8秒
+                    
+                    sectionTitle.classList.remove('show');
+                    isAnimationLocked = false;
+                    await wait(300); // 等待消失
+                    
+                    gameState = 'idle';
+                    
+                    // 自动前进到下一句
+                    await runNextStep();
+
+                } else if (line.type === 'scene') {
+                    dialogueBox.classList.remove('show');
+                    sceneTitle.textContent = line.text;
+                    sceneTitle.classList.add('show');
+                    sceneTransitionText.textContent = line.text;
+
+                    gameState = 'scene';
+                    sceneTransition.classList.add('show');
+                    sceneTransitionText.style.transform = 'translateX(0)';
+                    
+                    clearTimeout(sceneTimeout);
+                    sceneTimeout = setTimeout(runNextStep, 2500); // 2.5秒后自动前进
+                    
+                    // V20.0 修复: 不做任何 await，立即返回
+                    // 让 runNextStep 结束。等待下一次点击或
+                    // sceneTimeout 触发。
+
+                } else {
+                    // 旁白或对话
+                    dialogueBox.classList.add('show');
+                    sceneTitle.classList.add('show');
+                    if (line.type === 'narration') {
+                        characterName.textContent = '';
+                        dialogueBox.classList.add('name-hidden'); // V20.5 添加
+                        updateLog('旁白', line.text);
+                    } else {
+                        characterName.textContent = line.character;
+                        dialogueBox.classList.remove('name-hidden'); // V20.5 添加
+                        updateLog(line.character, line.text);
+                    }
+                    
+                    await startTypewriter(line.text); // 等待打字完成
+                }
+            }
+
+            // ----------------------------------------
+            // 5. 动画 & 打字 (V14.1)
+            // ----------------------------------------
+
+            // V14 新增：艺术字动画
+            function animateSectionTitle(main, sub) {
+                sectionTitleMain.innerHTML = '';
+                sectionTitleSub.textContent = sub;
+                
+                main.split('').forEach((char, index) => {
+                    const span = document.createElement('span');
+                    span.textContent = char === ' ' ? '\u00A0' : char; // 处理空格
+                    span.style.animationDelay = `${index * 0.05}s`;
+                    sectionTitleMain.appendChild(span);
+                });
+                
+                sectionTitle.classList.add('show');
+            }
+
+            function startTypewriter(text) {
+                return new Promise(resolve => {
+                    gameState = 'typing';
+                    // isAnimationLocked = true; // V14.1 移除：打字是可中断的
+                    dialogueText.classList.remove('completed'); // V14.1 添加：显示光标
+                    dialogueText.textContent = '';
+                    let index = 0;
+                    const typeSpeed = skipMode ? 0 : 40;
+
+                    function type() {
+                        if (index < text.length) {
+                            dialogueText.textContent += text.charAt(index);
+                            index++;
+                            typeTimeout = setTimeout(type, typeSpeed);
+                        } else {
+                            finishTyping(resolve);
+                        }
+                    }
+                    type();
+                });
+            }
+
+            function skipTyping() {
+                if (gameState !== 'typing') return;
+                clearTimeout(typeTimeout);
+                const line = storyData[currentLine - 1];
+                dialogueText.textContent = line.text;
+                // isAnimationLocked = false; // V14.1 移除
+                gameState = 'idle';
+                dialogueText.classList.add('completed');
+            }
+
+            function finishTyping(resolve) {
+                // isAnimationLocked = false; // V14.1 移除
+                gameState = 'idle';
+                dialogueText.classList.add('completed');
+                resolve();
+            }
+
+            // ----------------------------------------
+            // 6. 核心点击处理 (V14)
+            // ----------------------------------------
+            function handleUserClick() {
+                if (autoMode) {
+                    stopAuto();
+                    return; 
+                }
+                if (skipMode) {
+                    stopSkip();
+                    return; 
+                }
+                runNextStep();
+            }
+            
+            clickArea.addEventListener('click', handleUserClick);
+            sectionTitle.addEventListener('click', handleUserClick);
+            sceneTransition.addEventListener('click', handleUserClick);
+            
+            // V19.0 故事结束按钮
+            storyEndBtn.addEventListener('click', () => {
+                storyEndScreen.style.display = 'none';
+                showTitleScreen();
+            });
+
+            // ----------------------------------------
+            // 7. Auto / Skip (V14 核心重构)
+            // ----------------------------------------
+            
+            // V14 新增：统一的循环触发器
+            function triggerAutoOrSkip() {
+                if (autoMode) {
+                    // 如果正在播章节动画，等它
+                    if (isAnimationLocked || gameState !== 'idle') return;
+                    // 否则，按速度等
+                    autoTimeout = setTimeout(runNextStep, currentAutoSpeed);
+                } else if (skipMode) {
+                    // 如果正在播章节动画，等它
+                    if (isAnimationLocked || gameState === 'section') return;
+                    // 否则，按速度等
+                    skipTimeout = setTimeout(runNextStep, currentSkipSpeed);
+                }
+            }
+            
+            function startAuto(speed) {
+                stopSkip();
+                autoMode = true;
+                currentAutoSpeed = autoSpeeds[speed];
+                autoBtn.classList.add('active');
+                autoBtn.textContent = `Auto ${autoSpeedLabels[speed]}`;
+                runNextStep(); // 启动
+            }
+
+            function stopAuto() {
+                clearTimeout(autoTimeout);
+                clearTimeout(sceneTimeout); // V14.8
+                if (autoMode) {
+                    autoMode = false;
+                    autoBtn.classList.remove('active');
+                    autoBtn.textContent = `Auto`;
+                }
+            }
+
+            function startSkip(speed) {
+                stopAuto();
+                skipMode = true;
+                currentSkipSpeed = skipSpeeds[speed];
+                skipBtn.classList.add('active');
+                skipBtn.textContent = `快进 ${skipSpeedLabels[speed]}`;
+                runNextStep(); // 启动
+            }
+            
+            function stopSkip() {
+                clearTimeout(skipTimeout);
+                clearTimeout(sceneTimeout); // V14.8
+                if (skipMode) {
+                    skipMode = false;
+                    skipBtn.classList.remove('active');
+                    skipBtn.textContent = `快进`;
+                }
+            }
+            
+            // ----------------------------------------
+            // 8. 弹窗管理 (V20.1 状态机修复)
+            // ----------------------------------------
+            
+            function openModal(modal) {
+                // V15.0 标题在时，游戏也在 modal 模式
+                if (titleScreen.style.display === 'flex') {
+                    gameState = 'modal';
+                    // V20.1 修复：标题在时，也要停止 auto/skip
+                    stopAuto(); stopSkip();
+                } 
+                // V20.1 修复：任何时候打开弹窗，都应该暂停游戏
+                else if (gameContainer.style.display === 'flex' && gameState !== 'modal') {
+                    // V20.1 修复：只有在游戏内打开弹窗才需要停止
+                    stopAuto(); stopSkip();
+                    gameState = 'modal';
+                }
+                
+                // V20.1 修复：打开菜单时隐藏按钮
+                if (modal.id === 'menu-modal') {
+                    menuBtn.style.display = 'none';
+                }
+            
+                modal.style.display = 'flex';
+                setTimeout(() => {
+                    modal.classList.add('show');
+                    if (modal.id === 'menu-modal') {
+                        menuPanel.style.transform = 'translateX(0)';
+                    }
+                }, 10); 
+            }
+            
+            function closeModal(modal) {
+                modal.classList.remove('show');
+                if (modal.id === 'menu-modal') {
+                    menuPanel.style.transform = 'translateX(100%)';
+                }
+                setTimeout(() => {
+                    modal.style.display = 'none';
+                    
+                    // V20.1 修复：关闭菜单时显示按钮
+                    if (modal.id === 'menu-modal') {
+                        menuBtn.style.display = 'flex';
+                    }
+                
+                    if (!document.querySelector('.modal-backdrop.show')) {
+                        // V15.0 检查标题是否还在
+                        if (titleScreen.style.display !== 'flex') {
+                            // V20.1 修复：
+                            // 只有当 gameState 是 'modal' 时才将其重置为 'idle'
+                            // 如果 gameState 是 'scene' 或 'section' (由 jumpToLine 设置), 
+                            // 则保持不变。
+                            if (gameState === 'modal') {
+                                 gameState = 'idle';
+                            }
+                        }
+                    }
+                }, 300); 
+            }
+            
+            allCloseBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const modal = document.getElementById(btn.dataset.modalId);
+                    closeModal(modal);
+                });
+            });
+
+            menuModal.addEventListener('click', (e) => {
+                if (e.target === menuModal) {
+                    closeModal(menuModal);
+                }
+            });
+
+            menuBtn.addEventListener('click', () => {
+                // V20.1 修复：停止 auto/skip 的逻辑移入 openModal
+                updateStoryList();
+                openModal(menuModal);
+            });
+            
+            // V16.0 标题画面按钮
+            titleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showTitleScreen();
+            });
+            titleContinueBtn.addEventListener('click', () => {
+                const lastName = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                const lastLine = parseInt(localStorage.getItem(LAST_POS_PREFIX + lastName) || 0, 10);
+                startGame(lastName, lastLine);
+            });
+            titleStartBtn.addEventListener('click', () => {
+                const lastName = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                if (confirm(`确定要从头开始阅读《${lastName}》吗？`)) {
+                    startGame(lastName, 0);
+                }
+            });
+            titleLoadBtn.addEventListener('click', () => {
+                // V16.0 修复：传入正确的故事名
+                const lastStory = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                openSaveLoadModal('load', lastStory);
+            });
+            titleStoryListBtn.addEventListener('click', () => {
+                updateStoryList();
+                openModal(menuModal);
+            });
+            titleSettingsBtn.addEventListener('click', () => {
+                openModal(settingsModal);
+            });
+            
+            // 速度弹窗
+            function openSpeedModal(mode) {
+                currentSpeedSetMode = mode;
+                speedOptions.innerHTML = ''; // 清空
+                if (mode === 'auto') {
+                    speedModalTitle.textContent = '设置 Auto 速度';
+                    for (const speedKey in autoSpeeds) {
+                        const btn = document.createElement('button');
+                        btn.dataset.speed = speedKey;
+                        btn.textContent = autoSpeedLabels[speedKey];
+                        speedOptions.appendChild(btn);
+                    }
+                } else {
+                    speedModalTitle.textContent = '设置快进速度';
+                    for (const speedKey in skipSpeeds) {
+                        const btn = document.createElement('button');
+                        btn.dataset.speed = speedKey;
+                        btn.textContent = skipSpeedLabels[speedKey];
+                        speedOptions.appendChild(btn);
+                    }
+                }
+                openModal(speedModal);
+            }
+            autoBtn.addEventListener('click', (e) => { e.stopPropagation(); openSpeedModal('auto'); });
+            skipBtn.addEventListener('click', (e) => { e.stopPropagation(); openSpeedModal('skip'); });
+            speedCancelBtn.addEventListener('click', () => closeModal(speedModal));
+            
+            speedOptions.addEventListener('click', (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    const speed = e.target.dataset.speed;
+                    const mode = currentSpeedSetMode;
+                    closeModal(speedModal);
+                    closeModal(menuModal);
+                    setTimeout(() => {
+                        if (mode === 'auto') {
+                            startAuto(speed);
+                        } else {
+                            startSkip(speed);
+                        }
+                    }, 310);
+                }
+            });
+
+            // ----------------------------------------
+            // 9. 剧情导入与管理 (V18.0 修复)
+            // ----------------------------------------
+            
+            const storyDB = {
+                getAll: () => {
+                    let db = localStorage.getItem(STORY_DB_KEY);
+                    try { db = JSON.parse(db); if (!db) db = {}; } catch (e) { db = {}; }
+                    
+                    // V18.0 修复：仅当数据库*完全*为空时才添加默认故事
+                    if (Object.keys(db).length === 0) {
+                        db[DEFAULT_STORY_NAME] = DEFAULT_STORY_TEXT;
+                        storyDB.saveAll(db);
+                    }
+                    return db;
+                },
+                saveAll: (db) => { localStorage.setItem(STORY_DB_KEY, JSON.stringify(db)); },
+                saveStory: (name, text) => {
+                    const db = storyDB.getAll();
+                    db[name] = text;
+                    storyDB.saveAll(db);
+                }
+            };
+            
+            function parseStoryText(text) {
+                const lines = text.split('\n');
+                const data = [];
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine.startsWith('# ')) {
+                        // V14 抓取副标题
+                        const parts = trimmedLine.substring(2).split('|');
+                        data.push({ type: 'section', main: parts[0].trim(), sub: (parts[1] || '').trim() });
+                    } else if (trimmedLine.startsWith('## ')) {
+                        data.push({ type: 'scene', text: trimmedLine.substring(3) });
+                    } else {
+                        const parts = trimmedLine.split(': ');
+                        if (parts.length === 2) {
+                            const char = parts[0];
+                            const text = parts[1];
+                            if (char === '旁白') {
+                                data.push({ type: 'narration', text: text });
+                            } else {
+                                data.push({ character: char, text: text });
+                            }
+                        }
+                    }
+                }
+                return data;
+            }
+
+            // V11 逻辑 (V20.4 更新：添加编辑按钮)
+            function updateStoryList() {
+                storyList.innerHTML = '';
+                const db = storyDB.getAll();
+                const lastStory = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                
+                for (const name in db) {
+                    const item = document.createElement('div');
+                    item.className = 'story-item';
+                    item.dataset.storyName = name; // 存名字
+                    
+                    const nameEl = document.createElement('div');
+                    nameEl.className = 'story-name';
+                    nameEl.textContent = name;
+                    item.appendChild(nameEl);
+                    
+                    // V20.4 添加编辑按钮
+                    const editBtn = document.createElement('span');
+                    editBtn.className = 'story-edit-btn';
+                    editBtn.textContent = '编辑';
+                    item.appendChild(editBtn);
+                    
+                    const deleteBtn = document.createElement('span');
+                    deleteBtn.className = 'story-delete-btn';
+                    deleteBtn.textContent = '删除';
+                    item.appendChild(deleteBtn);
+
+                    // V16.0 修复：高亮当前*已加载*的故事
+                    if (name === lastStory) {
+                        item.classList.add('active');
+                        
+                        // V16.0 仅在游戏内打开时才加载章节
+                        if (gameContainer.style.display === 'flex') {
+                            const chapterList = document.createElement('div');
+                            chapterList.className = 'chapter-list';
+                            
+                            storyData.forEach((line, index) => {
+                                if (line.type === 'section' || line.type === 'scene') {
+                                    const chapterItem = document.createElement('div');
+                                    chapterItem.className = 'chapter-item';
+                                    chapterItem.classList.add(line.type); // 'section' or 'scene'
+                                    chapterItem.textContent = line.main || line.text;
+                                    chapterItem.dataset.lineIndex = index;
+                                    chapterList.appendChild(chapterItem);
+                                }
+                            });
+                            item.appendChild(chapterList);
+                        }
+                    }
+                    storyList.appendChild(item);
+                }
+            }
+
+            // V11 逻辑 (V20.4 更新：添加编辑事件)
+            storyList.addEventListener('click', (e) => {
+                const target = e.target;
+                const storyItem = target.closest('.story-item');
+                if (!storyItem) return;
+                const name = storyItem.dataset.storyName;
+                
+                if (target.classList.contains('story-delete-btn')) {
+                    deleteStory(name);
+                    return;
+                }
+                
+                // V20.4 处理编辑按钮
+                if (target.classList.contains('story-edit-btn')) {
+                    const db = storyDB.getAll();
+                    const storyText = db[name];
+                    if (storyText) {
+                        editDbStoryTextarea.value = storyText;
+                        editDbStoryModal.dataset.storyName = name; // 存储当前编辑的故事名
+                        openModal(editDbStoryModal);
+                    } else {
+                        alert('找不到故事数据！');
+                    }
+                    return;
+                }
+                
+                if (target.classList.contains('chapter-item')) {
+                    const index = parseInt(target.dataset.lineIndex, 10);
+                    handleChapterJump(index);
+                    return;
+                }
+                
+                // V16.0 修复：展开逻辑
+                const lastStory = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                if (name === lastStory && gameContainer.style.display === 'flex') {
+                    storyItem.classList.toggle('expanded');
+                } else if (name !== lastStory) {
+                    if (confirm(`要切换到故事《${name}》吗？\n（将从头开始）`)) {
+                        closeModal(menuModal);
+                        // V15.0 切换故事
+                        startGame(name, 0);
+                    }
+                }
+            });
+
+            // V12 修复：历史记录
+            function handleChapterJump(lineIndex) {
+                if (confirm(`确定要跳转到这个章节吗？\n当前进度将不会保存。`)) {
+                    jumpToLine(lineIndex);
+                    closeModal(menuModal);
+                }
+            }
+
+            // V15.0 逻辑重构
+            function jumpToLine(lineIndex, fromSave = false) {
+                // V20.1 修复：跳转时，立即脱离 modal 状态，允许 runNextStep
+                gameState = 'idle';
+                
+                // 重置
+                logHistory = [];
+                logContent.innerHTML = '';
+                sectionTitle.classList.remove('show');
+                dialogueBox.classList.remove('show');
+                sceneTitle.classList.remove('show');
+                sceneTransition.classList.remove('show', 'slide-out');
+                storyEndScreen.style.display = 'none'; // V19.0 隐藏
+                stopAuto(); stopSkip();
+                clearTimeout(sceneTimeout);
+
+                // V14.5 修复：重建历史和查找当前场景
+                let currentSceneText = "点击开始"; // 默认值
+                if (fromSave) {
+                    for (let i = 0; i< lineIndex; i++) {
+                        const line = storyData[i];
+                        if (line.type === 'scene') {
+                            currentSceneText = line.text; // 找到存档点之前的最后一个场景
+                        }
+                        if (line.type === 'narration') {
+                            updateLog('旁白', line.text);
+                        } else if (!line.type || (line.type && line.type !== 'section' && line.type !== 'scene')) {
+                            updateLog(line.character, line.text);
+                        }
+                    }
+                }
+                
+                sceneTitle.textContent = currentSceneText;
+                
+                currentLine = lineIndex;
+                
+                // V15.0 修复: 处理 lineIndex = 0 的情况
+                if (currentLine === 0) {
+                    dialogueBox.classList.add('show');
+                    sceneTitle.classList.add('show');
+                    sceneTitle.textContent = "点击开始";
+                    characterName.textContent = currentStoryName;
+                    dialogueBox.classList.remove('name-hidden'); // V20.5 确保重置
+                    dialogueText.textContent = "点击屏幕开始阅读故事...";
+                    gameState = 'idle';
+                } else {
+                    gameState = 'idle';
+                    runNextStep();
+                }
+            }
+            
+            function deleteStory(name) {
+                const db = storyDB.getAll();
+                // V18.0 修复: 检查是否是最后一个故事
+                if (name === DEFAULT_STORY_NAME && Object.keys(db).length === 1) {
+                     alert('这是最后一个故事，无法删除！');
+                     return;
+                }
+                
+                // V16.0 修复：使用 lastStory
+                const lastStory = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                if (name === lastStory) {
+                    alert('不能删除正在加载的故事！\n请先切换到另一个故事。');
+                    return;
+                }
+                if (confirm(`确定要删除故事《${name}》吗？\n此操作不可撤销！`)) {
+                    delete db[name];
+                    storyDB.saveAll(db);
+                    localStorage.removeItem(`${SAVE_KEY_PREFIX}${name}`);
+                    localStorage.removeItem(LAST_POS_PREFIX + name); // V15.0 删除进度
+                    alert('删除成功！');
+                    updateStoryList();
+                }
+            }
+            
+            importStoryBtn.addEventListener('click', () => importFileInput.click());
+            importFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const text = event.target.result;
+                    let name = file.name.replace('.txt', '');
+                    if (!name) name = "未命名故事";
+                    const db = storyDB.getAll();
+                    if (db[name]) {
+                        if (!confirm(`故事《${name}》已存在，要覆盖吗？`)) {
+                            importFileInput.value = '';
+                            return;
+                        }
+                    }
+                    storyDB.saveStory(name, text);
+                    importFileInput.value = '';
+                    alert(`《${name}》导入成功！`);
+                    updateStoryList();
+                };
+                reader.readAsText(file);
+            });
+
+            // ----------------------------------------
+            // 10. 历史记录 (V14.7 滚动修复)
+            // ----------------------------------------
+            function updateLog(character, text) {
+                logHistory.push({ character, text });
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.innerHTML = `<div class="log-character">${character}</div><div class="log-text">${text}</div>`;
+                logContent.appendChild(entry);
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+            
+            logBtn.addEventListener('click', (e) => { 
+                e.stopPropagation(); 
+                openModal(logModal); 
+                logContent.scrollTop = logContent.scrollHeight;
+            });
+            
+            // ----------------------------------------
+            // 11. 存读档 (V16.0 故事名修复)
+            // ----------------------------------------
+            
+            // V16.0 修复：传入故事名
+            const getSaveStoreName = (name) => `${SAVE_KEY_PREFIX}${name}`;
+            
+            function getSaveData(name) {
+                let data = localStorage.getItem(getSaveStoreName(name));
+                try { data = JSON.parse(data); if (!Array.isArray(data)) data = []; }
+                catch (e) { data = []; }
+                return data;
+            }
+            function setSaveData(name, data) {
+                localStorage.setItem(getSaveStoreName(name), JSON.stringify(data));
+            }
+            
+            function openSaveLoadModal(mode, storyName) {
+                currentSaveLoadMode = mode;
+                saveLoadTitle.textContent = mode === 'save' ? '存档' : '读档';
+                saveLoadContent.innerHTML = '';
+                
+                const saveData = getSaveData(storyName); 
+
+                for (let i = 0; i < TOTAL_SAVE_SLOTS; i++) {
+                    const slot = document.createElement('div');
+                    slot.className = 'save-slot';
+                    slot.dataset.slotIndex = i;
+                    const slotData = saveData[i];
+                    if (slotData) {
+                        slot.innerHTML = `
+                            <div class="slot-header">
+                                <span class="slot-header-left">${slotData.customName || `档位 ${i + 1}`}</span>
+                                <span class="slot-header-right">
+                                    <span class="slot-time">${slotData.time}</span>
+                                    <span class="slot-rename-btn" data-slot-index="${i}">✏️</span>
+                                </span>
+                            </div>
+                            <div class="slot-chapter">${slotData.chapter}</div>
+                            <div class="slot-line">${slotData.line}</div>`;
+                    } else {
+                        slot.innerHTML = `档位 ${i + 1}<br>（空）`;
+                        slot.classList.add('empty');
+                    }
+                    // V16.0 修复：传递 storyName
+                    slot.addEventListener('click', () => handleSlotClick(i, storyName));
+                    saveLoadContent.appendChild(slot);
+                }
+
+                saveLoadContent.querySelectorAll('.slot-rename-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const index = parseInt(e.currentTarget.dataset.slotIndex, 10);
+                        // V16.0 修复：传递 storyName
+                        renameSaveSlot(index, storyName);
+                    });
+                });
+
+                openModal(saveLoadModal);
+            }
+
+            // V16.0 修复：传递 storyName
+            function handleSlotClick(index, storyName) {
+                if (currentSaveLoadMode === 'save') {
+                    saveGame(index); // Save 总是保存 *当前* 游戏 (currentStoryName)
+                } else {
+                    loadGame(index, storyName); // Load 需要指定故事
+                }
+            }
+
+            // V16.0 修复：传递 storyName
+            function renameSaveSlot(index, storyName) {
+                const saveData = getSaveData(storyName);
+                const slotData = saveData[index];
+                if (!slotData) {
+                    alert('空档位无法重命名！');
+                    return;
+                }
+                const currentName = slotData.customName || `档位 ${index + 1}`;
+                const newName = prompt(`请输入新的存档名称：`, currentName);
+                if (newName && newName.trim() !== '') {
+                    slotData.customName = newName.trim();
+                    setSaveData(storyName, saveData);
+                    alert('重命名成功！');
+                    openSaveLoadModal(currentSaveLoadMode, storyName);
+                }
+            }
+
+            function saveGame(index) {
+                if (currentLine === 0 && (gameState === 'idle' || !storyData[currentLine])) { alert('故事还没开始，无法存档！'); return; }
+                const lineIndex = currentLine - 1;
+                const line = storyData[lineIndex];
+                if (!line) { alert('存档数据异常！'); return; } 
+                
+                let chapter = '序章';
+                for (let i = lineIndex; i >= 0; i--) {
+                    if (storyData[i].type === 'section') {
+                        chapter = storyData[i].main;
+                        break;
+                    }
+                }
+                
+                const saveData = getSaveData(currentStoryName);
+                
+                if (saveData[index]) {
+                    const displayName = saveData[index].customName || `档位 ${index + 1}`;
+                    if (!confirm(`确定要覆盖 ${displayName} 吗？\n（${saveData[index].chapter}）`)) {
+                        return;
+                    }
+                }
+                
+                const existingName = (saveData[index] && saveData[index].customName) ? saveData[index].customName : null;
+
+                saveData[index] = {
+                    time: new Date().toLocaleString('zh-CN', { hour12: false }),
+                    chapter: chapter,
+                    line: line.text || (line.type === 'narration' ? "（旁白）" : (line.type === 'scene' ? "（场景切换）" : "（章节标题）")),
+                    data: lineIndex,
+                    customName: existingName
+                };
+                setSaveData(currentStoryName, saveData);
+                alert(`档位 ${index + 1} 存档成功！`);
+                closeModal(saveLoadModal);
+            }
+
+            // V16.0 修复：传递 storyName
+            function loadGame(index, storyName) {
+                const saveData = getSaveData(storyName);
+                const slotData = saveData[index];
+                if (!slotData) { alert('这是一个空档位！'); return; }
+                
+                const displayName = slotData.customName || `档位 ${index + 1}`;
+                if (!confirm(`要读取 ${displayName} 吗？\n（${slotData.chapter}）`)) { return; }
+                
+                alert('读档完成！');
+                closeModal(saveLoadModal);
+                closeModal(menuModal);
+                
+                // V15.0 读档启动
+                startGame(storyName, slotData.data);
+            }
+            // V16.0 修复：传入正确的故事名
+            saveBtn.addEventListener('click', (e) => { e.stopPropagation(); openSaveLoadModal('save', currentStoryName); });
+            loadBtn.addEventListener('click', (e) => { e.stopPropagation(); openSaveLoadModal('load', currentStoryName); });
+
+            // ----------------------------------------
+            // 12. V18.0 AI 转换功能 (V20.3 修复)
+            // ----------------------------------------
+            convertStartBtn.addEventListener('click', handleStoryConversion);
+            copyPromptBtn.addEventListener('click', () => {
+                try {
+                    navigator.clipboard.writeText(AI_CONVERT_PROMPT);
+                    alert('提示词已复制到剪贴板！');
+                } catch (e) {
+                    alert('复制失败，请手动复制。');
+                }
+            });
+
+            async function handleStoryConversion() {
+                const file = convertFileInput.files[0];
+                if (!file) {
+                    alert('请先选择一个 .txt, .md, 或 .rtf 文件！');
+                    return;
+                }
+                
+                // V18.0 警告
+                if (!file.name.endsWith('.txt') && !file.name.endsWith('.md') && !file.name.endsWith('.rtf')) {
+                    if (!confirm("这似乎不是一个纯文本文件。转换结果可能不佳，要继续吗？")) {
+                        convertFileInput.value = '';
+                        return;
+                    }
+                }
+                
+                loadingOverlay.style.display = 'flex';
+                
+                const originalText = await file.text();
+                
+                try {
+                    const resultText = await fetchAIApi(originalText, AI_CONVERT_PROMPT);
+                    convertedStoryText = resultText;
+                    
+                    convertFileInput.value = ''; 
+                    loadingOverlay.style.display = 'none';
+                    openModal(convertResultModal);
+                    
+                } catch (error) {
+                    console.error('AI 转换失败:', error);
+                    alert('转换失败！请检查网络或 API 密钥。\n' + error.message);
+                    loadingOverlay.style.display = 'none';
+                }
+            }
+
+            async function fetchAIApi(text, prompt) {
+                // V20.2 修复：添加 /v1/chat/completions 端点
+                const API_URL = "https://gcli.ggchan.dev/v1/chat/completions";
+                const API_KEY = "gg-gcli-xCpc8VNdE1kRE34dY-VpTMMQXI_CrpcjwNqCvRHed9A";
+                const model = "gemini-2.5-pro-preview-06-05";
+
+                const body = JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: "system", content: prompt },
+                        { role: "user", content: text }
+                    ]
+                });
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: body
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API 请求失败，状态码: ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.choices && data.choices[0] && data.choices[0].message) {
+                    return data.choices[0].message.content;
+                } else {
+                    throw new Error('API 返回数据格式不正确。');
+                }
+            }
+
+            convertDownloadBtn.addEventListener('click', () => {
+                const blob = new Blob([convertedStoryText], { type: 'text/plain;charset=utf-8' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `[已转换] ${new Date().getTime()}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                closeModal(convertResultModal);
+            });
+            
+            convertImportBtn.addEventListener('click', () => {
+                let name = prompt("请输入新故事的名称：", "转换后的故事");
+                if (name && name.trim() !== '') {
+                    storyDB.saveStory(name, convertedStoryText);
+                    alert('导入成功！');
+                    // updateStoryList(); // V15.0 此时菜单可能未打开
+                }
+                closeModal(convertResultModal);
+            });
+            
+            // V20.3 转换后编辑 (AI)
+            convertEditBtn.addEventListener('click', () => {
+                editStoryTextarea.value = convertedStoryText;
+                closeModal(convertResultModal);
+                openModal(editStoryModal);
+            });
+            
+            editStorySaveBtn.addEventListener('click', () => {
+                convertedStoryText = editStoryTextarea.value;
+                closeModal(editStoryModal);
+                alert('修改已保存！');
+                openModal(convertResultModal); // 重新打开选择导入或下载
+            });
+            
+            editStoryCancelBtn.addEventListener('click', () => {
+                closeModal(editStoryModal);
+                openModal(convertResultModal); // 取消编辑，返回
+            });
+            
+            // V20.4 数据库故事编辑弹窗的事件
+            editDbStorySaveBtn.addEventListener('click', () => {
+                const storyName = editDbStoryModal.dataset.storyName;
+                if (!storyName) return;
+                
+                const newText = editDbStoryTextarea.value;
+                storyDB.saveStory(storyName, newText);
+                
+                closeModal(editDbStoryModal);
+                updateStoryList(); // 刷新菜单里的列表
+                
+                // 检查是否修改了当前的故事
+                if (storyName === currentStoryName && gameContainer.style.display === 'flex') {
+                    alert('你修改了当前正在阅读的故事，阅读器将返回标题画面以重新加载。');
+                    showTitleScreen();
+                } else {
+                    alert('保存成功！');
+                }
+            });
+            
+            editDbStoryCancelBtn.addEventListener('click', () => {
+                closeModal(editDbStoryModal);
+            });
+            
+            
+            // ----------------------------------------
+            // 13. V17.0 字体管理 (CSS 解析)
+            // ----------------------------------------
+            
+            function loadFontsFromStorage() {
+                const fonts = JSON.parse(localStorage.getItem(FONT_DB_KEY) || '[]');
+                
+                let optionsHTML = `<option value="${DEFAULT_FONT_VALUE}">默认系统字体</option>`;
+                let importCSS = '';
+
+                fonts.forEach(font => {
+                    // V17.0 修复: 必须转义 value 属性中的引号
+                    const escapedFamily = font.family.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    optionsHTML += `<option value="${escapedFamily}">${font.name}</option>`;
+                    importCSS += `@import url('${font.url}');\n`;
+                });
+                
+                fontSelect.innerHTML = optionsHTML; // 一次性设置
+                fontImportStyles.textContent = importCSS;
+            }
+
+            function applyFont(fontFamily) {
+                // V17.0 修复: 恢复默认
+                if (fontFamily === DEFAULT_FONT_VALUE || fontFamily === '' || !fontFamily) {
+                    document.body.style.removeProperty('font-family');
+                    localStorage.setItem(LAST_FONT_KEY, DEFAULT_FONT_VALUE);
+                } else {
+                    document.body.style.fontFamily = fontFamily;
+                    localStorage.setItem(LAST_FONT_KEY, fontFamily);
+                }
+            }
+
+            function applyLastFont() {
+                const lastFont = localStorage.getItem(LAST_FONT_KEY) || DEFAULT_FONT_VALUE;
+                applyFont(lastFont);
+                fontSelect.value = lastFont;
+            }
+
+            fontSaveBtn.addEventListener('click', () => {
+                const name = fontNameInput.value.trim();
+                const cssBlock = fontCssInput.value.trim();
+                
+                if (!name || !cssBlock) {
+                    alert('请填写“字体昵称”和“CSS 代码”！');
+                    return;
+                }
+                
+                let url = '';
+                let family = '';
+
+                // V17.0 使用 RegEx 解析
+                try {
+                    // 匹配 @import url("...") 或 @import url('...')
+                    const urlMatch = cssBlock.match(/@import\s+url\((['"])(.*?)\1\);/);
+                    if (urlMatch && urlMatch[2]) {
+                        url = urlMatch[2];
+                    } else {
+                        throw new Error('未找到 @import url("...");');
+                    }
+                    
+                    // 匹配 font-family: ...; (可能在 body{} 中也可能不在)
+                    const familyMatch = cssBlock.match(/font-family:\s*([^;]+);/);
+                    if (familyMatch && familyMatch[1]) {
+                        family = familyMatch[1].trim();
+                    } else {
+                        throw new Error("未找到 font-family: ...; 规则。");
+                    }
+                } catch (e) {
+                    alert('CSS 解析失败：\n' + e.message + '\n\n请确保粘贴了完整的 @import 和 font-family 代码。');
+                    return;
+                }
+
+                const fonts = JSON.parse(localStorage.getItem(FONT_DB_KEY) || '[]');
+                
+                // 检查是否已存在
+                if (fonts.find(f => f.name === name || f.family === family)) {
+                    alert('已存在同名或同 font-family 的字体！');
+                    return;
+                }
+
+                fonts.push({ name, url, family });
+                localStorage.setItem(FONT_DB_KEY, JSON.stringify(fonts));
+                
+                loadFontsFromStorage(); // 重新加载 @import 和 select
+                applyFont(family); // 应用新字体
+                fontSelect.value = family; // 选中新字体
+                
+                fontNameInput.value = '';
+                fontCssInput.value = '';
+                
+                alert('字体保存成功！');
+            });
+
+            fontSelect.addEventListener('change', (e) => {
+                applyFont(e.target.value);
+            });
+            
+            fontDefaultBtn.addEventListener('click', () => {
+                applyFont(DEFAULT_FONT_VALUE);
+                fontSelect.value = DEFAULT_FONT_VALUE;
+            });
+            
+            fontDeleteBtn.addEventListener('click', () => {
+                const selectedFontFamily = fontSelect.value;
+                if (selectedFontFamily === DEFAULT_FONT_VALUE) {
+                    alert('不能删除默认字体。');
+                    return;
+                }
+                
+                if (confirm(`确定要删除字体 "${fontSelect.options[fontSelect.selectedIndex].text}" 吗？`)) {
+                    let fonts = JSON.parse(localStorage.getItem(FONT_DB_KEY) || '[]');
+                    fonts = fonts.filter(font => font.family !== selectedFontFamily);
+                    localStorage.setItem(FONT_DB_KEY, JSON.stringify(fonts));
+                    
+                    loadFontsFromStorage(); // 刷新
+                    applyFont(DEFAULT_FONT_VALUE); // 恢复默认
+                }
+            });
+
+
+            // ----------------------------------------
+            // 14. V15.0 启动/切换逻辑
+            // ----------------------------------------
+            
+            function saveLastPosition() {
+                // V16.0 修复：只有在游戏内才保存
+                if (gameContainer.style.display === 'none' || gameState === 'modal') return;
+                const line = (currentLine > 0) ? currentLine - 1 : 0;
+                localStorage.setItem(LAST_POS_PREFIX + currentStoryName, line);
+            }
+            
+            function showTitleScreen() {
+                saveLastPosition();
+                stopAuto(); stopSkip();
+                
+                gameContainer.style.display = 'none';
+                storyEndScreen.style.display = 'none'; // V19.0 隐藏
+                // V20.1 修复：标题画面不应显示游戏菜单按钮
+                menuBtn.style.display = 'none'; 
+                
+                // 重新检查继续按钮
+                const lastName = localStorage.getItem(LAST_STORY_KEY) || DEFAULT_STORY_NAME;
+                const lastLine = parseInt(localStorage.getItem(LAST_POS_PREFIX + lastName) || 0, 10);
+                titleContinueBtn.disabled = (lastLine <= 0);
+                
+                titleScreen.style.display = 'flex';
+                gameState = 'modal'; // V15.0 标题 = modal
+            }
+            
+            // V15.0 启动/切换故事的统一入口
+            function startGame(name, lineIndex) {
+                // V16.0 修复：如果故事不存在，则中止
+                const db = storyDB.getAll();
+                if (!db[name]) {
+                    alert(`错误：找不到故事《${name}》。`);
+                    localStorage.removeItem(LAST_STORY_KEY);
+                    showTitleScreen();
+                    return;
+                }
+                
+                loadStory(name);
+                jumpToLine(lineIndex, lineIndex > 0); // V15.0: 只有 > 0 才重建历史
+                
+                titleScreen.style.display = 'none';
+                gameContainer.style.display = 'flex';
+                // V20.1 修复：游戏开始时显示菜单按钮
+                menuBtn.style.display = 'flex';
+                
+                gameState = 'idle';
+            }
+            
+            function loadStory(name) {
+                const db = storyDB.getAll();
+                const text = db[name]; // V16.0 修复：启动时已检查，无需回退
+                
+                currentStoryName = name;
+                localStorage.setItem(LAST_STORY_KEY, name);
+                
+                storyData = parseStoryText(text);
+                
+                // 重置所有状态 (但不显示)
+                currentLine = 0;
+                logHistory = [];
+                logContent.innerHTML = '';
+                sectionTitle.classList.remove('show');
+                dialogueBox.classList.remove('show');
+                sceneTitle.classList.remove('show');
+                sceneTransition.classList.remove('show', 'slide-out');
+                stopAuto();
+                stopSkip();
+                clearTimeout(sceneTimeout);
+            }
+
+            // ----------------------------------------
+            // 15. 初始化
+            // ----------------------------------------
+            function init() {
+                // 1. V19.0 填充提示词
+                promptPreBlock.textContent = AI_CONVERT_PROMPT;
+                // 2. 加载字体
+                loadFontsFromStorage();
+                applyLastFont();
+                // 3. 显示标题
+                showTitleScreen();
+            }
+            
+            init();
+
+        }); // DOMContentLoaded 监听器结束
+    </script>
+</body>
+</html>
